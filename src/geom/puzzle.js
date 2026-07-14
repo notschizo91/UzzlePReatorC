@@ -1,0 +1,195 @@
+// Core pipeline: SVG-derived geometry -> puzzle pieces + tray solids.
+// DOM-free so it can run in node for tests.
+import {
+  union, intersect, difference, offset, strokePolylines, toRegions,
+  area, bounds, translateRings, scaleRings, ringArea,
+} from './clip.js';
+import { mulberry32, makeJigsawGrid, chooseGrid } from './jigsaw.js';
+
+export const DEFAULT_PARAMS = {
+  targetWidth: 180,     // mm, silhouette is scaled to this width
+  targetPieces: 30,
+  seed: 1,
+  pieceHeight: 6,       // mm, extrusion height of pieces
+  gap: 0.35,            // mm, total gap between neighbouring pieces
+  trayClearance: 0.25,  // mm, extra room between pieces and tray pocket wall
+  baseHeight: 2.4,      // mm, tray floor under the pieces
+  borderHeight: 8,      // mm, tray wall height above the floor
+  borderWidth: 5,       // mm, tray wall thickness
+  surfaceMode: 'engrave', // 'none' | 'engrave' | 'emboss'
+  lineWidth: 1.2,       // mm, engraved/embossed line width
+  lineDepth: 1.0,       // mm, groove depth / ridge height
+};
+
+// A "solid" is a list of stacked extrusion layers; each layer is a set of
+// closed rings extruded from z0 to z1. Stacked layers are exported as
+// separate watertight shells (slicers union touching shells).
+
+/**
+ * Normalize imported geometry: pick the silhouette, scale to target width,
+ * centre on the origin.
+ * input: { closed: [ring,...], open: [{pts, closed:false},...] } in
+ * arbitrary SVG user units, y-up.
+ */
+export function normalizeInput(input, targetWidth) {
+  let silhouette = input.closed.length ? union(input.closed) : [];
+  const allLines = [
+    ...input.closed.map((pts) => ({ pts, closed: true })),
+    ...input.open,
+  ];
+
+  // Fallback for stroke-only art (outline drawn as unclosed segments):
+  // fatten every line, union, and keep only the outer contours.
+  const everything = allLines.flatMap((l) => l.pts);
+  const bbAll = bounds([everything]);
+  const diag = Math.hypot(bbAll.width, bbAll.height) || 1;
+  if (!silhouette.length || area(silhouette) < 0.25 * bbAll.width * bbAll.height) {
+    const fat = strokePolylines(allLines, diag * 0.01);
+    const outers = toRegions(fat).map((r) => r.outer);
+    const filled = outers.length ? union(outers) : [];
+    if (area(filled) > area(silhouette)) silhouette = filled;
+  }
+  if (!silhouette.length) throw new Error('No usable outline found in the SVG.');
+
+  // Keep only the dominant outer regions (drop stray specks < 1% of max).
+  const regions = toRegions(silhouette);
+  const maxA = Math.max(...regions.map((r) => Math.abs(ringArea(r.outer))));
+  const kept = regions.filter((r) => Math.abs(ringArea(r.outer)) > 0.01 * maxA);
+  silhouette = kept.flatMap((r) => [r.outer, ...r.holes]);
+
+  const bb = bounds(silhouette);
+  const s = targetWidth / bb.width;
+  const cx = (bb.minX + bb.maxX) / 2, cy = (bb.minY + bb.maxY) / 2;
+  const xf = (rings) => scaleRings(translateRings(rings, -cx, -cy), s);
+
+  return {
+    silhouette: xf(silhouette),
+    lines: allLines.map((l) => ({ closed: l.closed, pts: xf([l.pts])[0] })),
+  };
+}
+
+function centroidOf(rings) {
+  let sx = 0, sy = 0, n = 0;
+  for (const ring of rings) for (const [x, y] of ring) { sx += x; sy += y; n++; }
+  return n ? [sx / n, sy / n] : [0, 0];
+}
+
+/**
+ * Build the whole model.
+ * @returns {{ pieces: [{rings, layers, centroid}], tray: {layers}, stats, warnings }}
+ */
+export function buildPuzzle(normalized, params) {
+  const p = { ...DEFAULT_PARAMS, ...params };
+  const warnings = [];
+  const { silhouette, lines } = normalized;
+  const bb = bounds(silhouette);
+
+  // --- cut the silhouette with the jigsaw grid ---
+  const { cols, rows } = chooseGrid(bb.width, bb.height, p.targetPieces);
+  const rng = mulberry32(p.seed);
+  const pad = 0.5; // grid overhangs the silhouette slightly
+  const grid = makeJigsawGrid(
+    { minX: bb.minX - pad, minY: bb.minY - pad, maxX: bb.maxX + pad, maxY: bb.maxY + pad },
+    cols, rows, rng,
+  );
+
+  // Each grid cell may intersect the silhouette in several islands; every
+  // island starts life as its own fragment.
+  let fragments = [];
+  for (const cell of grid.cells) {
+    const cut = intersect([cell.ring], silhouette);
+    for (const region of toRegions(cut)) {
+      fragments.push({ cell: [cell.r, cell.c], rings: [region.outer, ...region.holes] });
+    }
+  }
+  if (!fragments.length) throw new Error('Cutting produced no pieces - check the SVG outline.');
+
+  // --- merge slivers into their best neighbour ---
+  const cellArea = grid.cellW * grid.cellH;
+  const minArea = 0.28 * cellArea;
+  let guard = fragments.length * 4;
+  while (guard-- > 0) {
+    fragments.sort((a, b) => area(a.rings) - area(b.rings));
+    const small = fragments.find((f) => area(f.rings) < minArea);
+    if (!small || fragments.length <= 1) break;
+    const grown = offset(small.rings, 0.3);
+    let best = null, bestOverlap = 0;
+    for (const other of fragments) {
+      if (other === small) continue;
+      const dr = Math.abs(other.cell[0] - small.cell[0]);
+      const dc = Math.abs(other.cell[1] - small.cell[1]);
+      if (dr + dc > 1) continue; // only orthogonally adjacent (or same) cells
+      const overlap = area(intersect(grown, other.rings));
+      if (overlap > bestOverlap) { bestOverlap = overlap; best = other; }
+    }
+    if (!best || bestOverlap <= 0) {
+      // isolated speck: drop it
+      fragments = fragments.filter((f) => f !== small);
+      warnings.push('Dropped an isolated fragment too small to be a piece.');
+      continue;
+    }
+    best.rings = union(best.rings, small.rings);
+    fragments = fragments.filter((f) => f !== small);
+  }
+
+  // --- engraving strokes, kept strictly inside the silhouette ---
+  let strokes = [];
+  if (p.surfaceMode !== 'none' && p.lineDepth > 0 && p.lineWidth > 0) {
+    const raw = strokePolylines(lines, p.lineWidth);
+    strokes = intersect(raw, offset(silhouette, -p.lineWidth));
+  }
+
+  // --- final pieces: inset for the gap, build layered solids ---
+  const half = p.gap / 2;
+  const H = p.pieceHeight;
+  const pieces = [];
+  for (const frag of fragments) {
+    const inset = offset(frag.rings, -half);
+    if (!inset.length) {
+      warnings.push('Dropped a piece that vanished after the gap inset - try a smaller gap or fewer pieces.');
+      continue;
+    }
+    const layers = [];
+    if (p.surfaceMode === 'engrave' && strokes.length) {
+      const grooves = intersect(strokes, inset);
+      const top = grooves.length ? difference(inset, grooves) : inset;
+      const d = Math.min(p.lineDepth, H - 0.6);
+      layers.push({ rings: inset, z0: 0, z1: H - d });
+      if (top.length) layers.push({ rings: top, z0: H - d, z1: H });
+    } else if (p.surfaceMode === 'emboss' && strokes.length) {
+      layers.push({ rings: inset, z0: 0, z1: H });
+      const ridges = intersect(strokes, offset(inset, -0.3));
+      if (ridges.length) layers.push({ rings: ridges, z0: H, z1: H + p.lineDepth });
+    } else {
+      layers.push({ rings: inset, z0: 0, z1: H });
+    }
+    pieces.push({ rings: inset, layers, centroid: centroidOf(inset) });
+  }
+  if (!pieces.length) throw new Error('All pieces were dropped - reduce gap or piece count.');
+
+  // --- tray ---
+  const pocket = offset(silhouette, half + p.trayClearance);
+  const outerWall = offset(pocket, p.borderWidth);
+  const wallRing = difference(outerWall, pocket);
+  const tray = {
+    layers: [
+      { rings: outerWall, z0: 0, z1: p.baseHeight },
+      { rings: wallRing, z0: p.baseHeight, z1: p.baseHeight + p.borderHeight },
+    ],
+  };
+
+  const sizeBB = bounds(outerWall);
+  return {
+    pieces,
+    tray,
+    warnings: [...new Set(warnings)],
+    stats: {
+      pieces: pieces.length,
+      cols, rows,
+      widthMM: sizeBB.width,
+      heightMM: sizeBB.height,
+      pieceHeightMM: p.surfaceMode === 'emboss' ? H + p.lineDepth : H,
+      trayHeightMM: p.baseHeight + p.borderHeight,
+    },
+  };
+}
