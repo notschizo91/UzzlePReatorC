@@ -94,10 +94,17 @@ export function buildPuzzle(normalized, params) {
   );
 
   // Each grid cell may intersect the silhouette in several islands; every
-  // island starts life as its own fragment.
+  // island starts life as its own fragment. Cut curves can cross each
+  // other (deep knobs from different cells meeting inside a third), so
+  // each cell's cut is subtracted from everything already claimed -
+  // pieces are disjoint by construction.
   let fragments = [];
+  let claimed = [];
   for (const cell of grid.cells) {
-    const cut = intersect([cell.ring], silhouette);
+    let cut = intersect([cell.ring], silhouette);
+    if (cut.length && claimed.length) cut = difference(cut, claimed);
+    if (!cut.length) continue;
+    claimed = claimed.length ? union(claimed, cut) : cut;
     for (const region of toRegions(cut)) {
       fragments.push({ cell: [cell.r, cell.c], rings: [region.outer, ...region.holes] });
     }
@@ -113,22 +120,30 @@ export function buildPuzzle(normalized, params) {
     const small = fragments.find((f) => area(f.rings) < minArea);
     if (!small || fragments.length <= 1) break;
     const grown = offset(small.rings, 0.3);
-    let best = null, bestOverlap = 0;
+    const candidates = [];
     for (const other of fragments) {
       if (other === small) continue;
       const dr = Math.abs(other.cell[0] - small.cell[0]);
       const dc = Math.abs(other.cell[1] - small.cell[1]);
-      if (dr + dc > 1) continue; // only orthogonally adjacent (or same) cells
+      if (dr > 1 || dc > 1) continue; // same or adjacent cells only
       const overlap = area(intersect(grown, other.rings));
-      if (overlap > bestOverlap) { bestOverlap = overlap; best = other; }
+      if (overlap > 0) candidates.push({ other, overlap });
     }
-    if (!best || bestOverlap <= 0) {
-      // isolated speck: drop it
-      fragments = fragments.filter((f) => f !== small);
+    candidates.sort((a, b) => b.overlap - a.overlap);
+    // Only merge into a neighbour the fragment actually connects to;
+    // otherwise the "merged" piece would contain a loose island.
+    let merged = false;
+    for (const { other } of candidates) {
+      const u = union(other.rings, small.rings);
+      if (toRegions(u).length <= toRegions(other.rings).length) {
+        other.rings = u;
+        merged = true;
+        break;
+      }
+    }
+    if (!merged) {
       warnings.push('Dropped an isolated fragment too small to be a piece.');
-      continue;
     }
-    best.rings = union(best.rings, small.rings);
     fragments = fragments.filter((f) => f !== small);
   }
 
@@ -144,10 +159,18 @@ export function buildPuzzle(normalized, params) {
   const H = p.pieceHeight;
   const pieces = [];
   for (const frag of fragments) {
-    const inset = offset(frag.rings, -half);
+    let inset = offset(frag.rings, -half);
     if (!inset.length) {
       warnings.push('Dropped a piece that vanished after the gap inset - try a smaller gap or fewer pieces.');
       continue;
+    }
+    // A narrow neck can snap into islands under the inset; keep only the
+    // largest body so no piece hides a loose crumb.
+    const parts = toRegions(inset);
+    if (parts.length > 1) {
+      parts.sort((a, b) => (Math.abs(ringArea(b.outer)) - Math.abs(ringArea(a.outer))));
+      inset = [parts[0].outer, ...parts[0].holes];
+      warnings.push('Trimmed loose fragments off a piece with a very narrow neck.');
     }
     const layers = [];
     if (p.surfaceMode === 'engrave' && strokes.length) {

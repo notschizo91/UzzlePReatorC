@@ -105,6 +105,24 @@ for (const mode of ['none', 'emboss']) {
   check(bad === 0, `${mode}: ${shells.length} shells all watertight with volume`);
 }
 
+console.log('pieces: pairwise disjoint, each one connected body');
+{
+  const { intersect, area, toRegions } = await import('../src/geom/clip.js');
+  // stress across several seeds and piece counts (elongated grids included)
+  for (const [pieces, seed] of [[24, 7], [40, 11], [8, 2], [60, 99]]) {
+    const m = buildPuzzle(norm, { targetPieces: pieces, seed, surfaceMode: 'none' });
+    let overlap = 0, split = 0;
+    for (let i = 0; i < m.pieces.length; i++) {
+      if (toRegions(m.pieces[i].rings).length !== 1) split++;
+      for (let k = i + 1; k < m.pieces.length; k++) {
+        overlap += area(intersect(m.pieces[i].rings, m.pieces[k].rings));
+      }
+    }
+    check(overlap < 0.01, `pieces=${pieces} seed=${seed}: overlap area ${overlap.toFixed(4)} mm^2`);
+    check(split === 0, `pieces=${pieces} seed=${seed}: no piece is split into islands`);
+  }
+}
+
 console.log('determinism: same seed same geometry');
 {
   const a = buildPuzzle(norm, { targetPieces: 16, seed: 42 });

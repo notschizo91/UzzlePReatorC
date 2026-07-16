@@ -29,10 +29,14 @@ function sampleCubic(p0, c1, c2, p1, segments, out) {
 
 // Classic jigsaw tab curve (after Draradech's generator): three cubic
 // Beziers in edge-local coordinates, x along the edge [0..1], y
-// perpendicular, then mapped onto the segment A->B.
-function tabEdge(A, B, rng, tabSize, jitter) {
+// perpendicular, then mapped onto the segment A->B. The perpendicular
+// extent is scaled by the smaller cell dimension (yScale) so knobs on
+// long edges of non-square cells can't reach across a neighbouring cell
+// and cross other cut curves.
+function tabEdge(A, B, rng, tabSize, jitter, yScale) {
   const dx = B[0] - A[0], dy = B[1] - A[1];
   const L = Math.hypot(dx, dy);
+  const yS = Math.min(L, yScale);
   const ux = dx / L, uy = dy / L;
   const flip = rng() < 0.5 ? 1 : -1;
   const nx = -uy * flip, ny = ux * flip;
@@ -57,7 +61,7 @@ function tabEdge(A, B, rng, tabSize, jitter) {
   sampleCubic(p3, p4, p5, p6, 14, local);
   sampleCubic(p6, p7, p8, p9, 12, local);
 
-  return local.map(([x, y]) => [A[0] + ux * (x * L) + nx * (y * L), A[1] + uy * (x * L) + ny * (y * L)]);
+  return local.map(([x, y]) => [A[0] + ux * (x * L) + nx * (y * yS), A[1] + uy * (x * L) + ny * (y * yS)]);
 }
 
 function straightEdge(A, B) {
@@ -84,6 +88,7 @@ function appendEdge(ring, edge, reverse) {
 export function makeJigsawGrid(bbox, cols, rows, rng, { tabSize = 0.2, jitter = 0.04 } = {}) {
   const cellW = (bbox.maxX - bbox.minX) / cols;
   const cellH = (bbox.maxY - bbox.minY) / rows;
+  const minDim = Math.min(cellW, cellH);
   const X = (c) => bbox.minX + c * cellW;
   const Y = (r) => bbox.maxY - r * cellH; // row 0 at top
 
@@ -93,7 +98,7 @@ export function makeJigsawGrid(bbox, cols, rows, rng, { tabSize = 0.2, jitter = 
     hEdges[r] = [];
     for (let c = 0; c < cols; c++) {
       const A = [X(c), Y(r)], B = [X(c + 1), Y(r)];
-      hEdges[r][c] = (r === 0 || r === rows) ? straightEdge(A, B) : tabEdge(A, B, rng, tabSize, jitter);
+      hEdges[r][c] = (r === 0 || r === rows) ? straightEdge(A, B) : tabEdge(A, B, rng, tabSize, jitter, minDim);
     }
   }
   // Vertical boundaries: vEdges[r][k] runs top->bottom along x = X(k).
@@ -102,7 +107,7 @@ export function makeJigsawGrid(bbox, cols, rows, rng, { tabSize = 0.2, jitter = 
     vEdges[r] = [];
     for (let k = 0; k <= cols; k++) {
       const A = [X(k), Y(r)], B = [X(k), Y(r + 1)];
-      vEdges[r][k] = (k === 0 || k === cols) ? straightEdge(A, B) : tabEdge(A, B, rng, tabSize, jitter);
+      vEdges[r][k] = (k === 0 || k === cols) ? straightEdge(A, B) : tabEdge(A, B, rng, tabSize, jitter, minDim);
     }
   }
 
