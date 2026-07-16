@@ -48,10 +48,10 @@ for (const [pieces, seed, mode] of [[30, 7, 'engrave'], [45, 3, 'engrave'], [60,
         overlap += area(intersect(m.pieces[i].rings, m.pieces[k].rings));
       }
     }
-    return { n: m.pieces.length, overlap, split };
+    return { n: m.pieces.length, overlap, split, uncovered: m.stats.uncoveredMM2 };
   });
-  const ok = r.overlap < 0.01 && r.split === 0;
-  console.log(`${ok ? 'ok  ' : 'FAIL'} star pieces=${pieces} seed=${seed} mode=${mode}: n=${r.n}, overlap=${r.overlap.toFixed(4)} mm², split=${r.split}`);
+  const ok = r.overlap < 0.01 && r.split === 0 && r.uncovered < 40;
+  console.log(`${ok ? 'ok  ' : 'FAIL'} star pieces=${pieces} seed=${seed} mode=${mode}: n=${r.n}, overlap=${r.overlap.toFixed(4)} mm², split=${r.split}, uncovered=${r.uncovered.toFixed(2)} mm²`);
   if (!ok) errors.push(`starfish overlap (pieces=${pieces} seed=${seed})`);
 }
 

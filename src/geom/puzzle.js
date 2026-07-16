@@ -99,12 +99,12 @@ export function buildPuzzle(normalized, params) {
   // each cell's cut is subtracted from everything already claimed -
   // pieces are disjoint by construction.
   let fragments = [];
-  let claimed = [];
+  const claimed = []; // verbatim rings of every fragment cut so far
   for (const cell of grid.cells) {
     let cut = intersect([cell.ring], silhouette);
     if (cut.length && claimed.length) cut = difference(cut, claimed);
     if (!cut.length) continue;
-    claimed = claimed.length ? union(claimed, cut) : cut;
+    claimed.push(...cut);
     for (const region of toRegions(cut)) {
       fragments.push({ cell: [cell.r, cell.c], rings: [region.outer, ...region.holes] });
     }
@@ -114,10 +114,11 @@ export function buildPuzzle(normalized, params) {
   // --- merge slivers into their best neighbour ---
   const cellArea = grid.cellW * grid.cellH;
   const minArea = 0.28 * cellArea;
+  const keepMin = Math.max(4, 0.04 * cellArea); // still a viable small piece
   let guard = fragments.length * 4;
   while (guard-- > 0) {
     fragments.sort((a, b) => area(a.rings) - area(b.rings));
-    const small = fragments.find((f) => area(f.rings) < minArea);
+    const small = fragments.find((f) => !f.unmergeable && area(f.rings) < minArea);
     if (!small || fragments.length <= 1) break;
     const grown = offset(small.rings, 0.3);
     const candidates = [];
@@ -130,8 +131,10 @@ export function buildPuzzle(normalized, params) {
       if (overlap > 0) candidates.push({ other, overlap });
     }
     candidates.sort((a, b) => b.overlap - a.overlap);
-    // Only merge into a neighbour the fragment actually connects to;
-    // otherwise the "merged" piece would contain a loose island.
+    // Merge into a neighbour the fragment actually connects to. Boolean
+    // rounding can leave micrometre cracks between touching fragments, so
+    // when the plain union stays disconnected, retry with the sliver grown
+    // slightly to bridge the crack and trim any overshoot off the others.
     let merged = false;
     for (const { other } of candidates) {
       const u = union(other.rings, small.rings);
@@ -140,11 +143,34 @@ export function buildPuzzle(normalized, params) {
         merged = true;
         break;
       }
+      let u2 = union(other.rings, offset(small.rings, 0.02));
+      if (toRegions(u2).length <= toRegions(other.rings).length) {
+        const othersRings = fragments
+          .filter((f) => f !== other && f !== small)
+          .flatMap((f) => f.rings);
+        if (othersRings.length) u2 = difference(u2, othersRings);
+        if (u2.length && toRegions(u2).length <= toRegions(other.rings).length) {
+          other.rings = u2;
+          merged = true;
+          break;
+        }
+      }
     }
-    if (!merged) {
+    if (merged) {
+      fragments = fragments.filter((f) => f !== small);
+    } else if (area(small.rings) >= keepMin) {
+      small.unmergeable = true; // keep it as a legitimately small piece
+    } else {
       warnings.push('Dropped an isolated fragment too small to be a piece.');
+      fragments = fragments.filter((f) => f !== small);
     }
-    fragments = fragments.filter((f) => f !== small);
+  }
+
+  // How much of the outline the pieces actually cover (pre-inset).
+  const uncoveredMM2 = area(difference(silhouette, fragments.flatMap((f) => f.rings)));
+  const silArea = area(silhouette);
+  if (uncoveredMM2 > 0.005 * silArea) {
+    warnings.push(`Pieces do not cover ${uncoveredMM2.toFixed(1)} mm² of the outline - try fewer pieces.`);
   }
 
   // --- engraving strokes, kept strictly inside the silhouette ---
@@ -158,35 +184,42 @@ export function buildPuzzle(normalized, params) {
   const half = p.gap / 2;
   const H = p.pieceHeight;
   const pieces = [];
+  const buildPiece = (rings) => {
+    const layers = [];
+    if (p.surfaceMode === 'engrave' && strokes.length) {
+      const grooves = intersect(strokes, rings);
+      const top = grooves.length ? difference(rings, grooves) : rings;
+      const d = Math.min(p.lineDepth, H - 0.6);
+      layers.push({ rings, z0: 0, z1: H - d });
+      if (top.length) layers.push({ rings: top, z0: H - d, z1: H });
+    } else if (p.surfaceMode === 'emboss' && strokes.length) {
+      layers.push({ rings, z0: 0, z1: H });
+      const ridges = intersect(strokes, offset(rings, -0.3));
+      if (ridges.length) layers.push({ rings: ridges, z0: H, z1: H + p.lineDepth });
+    } else {
+      layers.push({ rings, z0: 0, z1: H });
+    }
+    pieces.push({ rings, layers, centroid: centroidOf(rings) });
+  };
+
   for (const frag of fragments) {
-    let inset = offset(frag.rings, -half);
+    const inset = offset(frag.rings, -half);
     if (!inset.length) {
       warnings.push('Dropped a piece that vanished after the gap inset - try a smaller gap or fewer pieces.');
       continue;
     }
-    // A narrow neck can snap into islands under the inset; keep only the
-    // largest body so no piece hides a loose crumb.
-    const parts = toRegions(inset);
-    if (parts.length > 1) {
-      parts.sort((a, b) => (Math.abs(ringArea(b.outer)) - Math.abs(ringArea(a.outer))));
-      inset = [parts[0].outer, ...parts[0].holes];
-      warnings.push('Trimmed loose fragments off a piece with a very narrow neck.');
-    }
-    const layers = [];
-    if (p.surfaceMode === 'engrave' && strokes.length) {
-      const grooves = intersect(strokes, inset);
-      const top = grooves.length ? difference(inset, grooves) : inset;
-      const d = Math.min(p.lineDepth, H - 0.6);
-      layers.push({ rings: inset, z0: 0, z1: H - d });
-      if (top.length) layers.push({ rings: top, z0: H - d, z1: H });
-    } else if (p.surfaceMode === 'emboss' && strokes.length) {
-      layers.push({ rings: inset, z0: 0, z1: H });
-      const ridges = intersect(strokes, offset(inset, -0.3));
-      if (ridges.length) layers.push({ rings: ridges, z0: H, z1: H + p.lineDepth });
-    } else {
-      layers.push({ rings: inset, z0: 0, z1: H });
-    }
-    pieces.push({ rings: inset, layers, centroid: centroidOf(inset) });
+    // A narrow neck can snap a piece into islands under the inset. Big
+    // islands become pieces of their own; only crumbs are trimmed away.
+    const parts = toRegions(inset)
+      .sort((a, b) => Math.abs(ringArea(b.outer)) - Math.abs(ringArea(a.outer)));
+    parts.forEach((part, idx) => {
+      const rings = [part.outer, ...part.holes];
+      if (idx > 0 && area(rings) < keepMin) {
+        warnings.push('Trimmed a tiny fragment off a piece with a very narrow neck.');
+        return;
+      }
+      buildPiece(rings);
+    });
   }
   if (!pieces.length) throw new Error('All pieces were dropped - reduce gap or piece count.');
 
@@ -208,6 +241,7 @@ export function buildPuzzle(normalized, params) {
     warnings: [...new Set(warnings)],
     stats: {
       pieces: pieces.length,
+      uncoveredMM2,
       cols, rows,
       widthMM: sizeBB.width,
       heightMM: sizeBB.height,

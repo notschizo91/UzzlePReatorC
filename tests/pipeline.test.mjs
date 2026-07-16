@@ -154,6 +154,44 @@ console.log('starfish: thin swirly arms stay disjoint across seeds');
   check(bad === 0, `${runs} starfish builds: all disjoint, no split pieces`);
 }
 
+console.log('flower with hole: high piece counts leave no gaps');
+{
+  const { intersect, area, toRegions } = await import('../src/geom/clip.js');
+  function flower(R = 100, n = 720) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      const r = R * (0.62 + 0.38 * Math.cos(5 * t));
+      pts.push([r * Math.cos(t), r * Math.sin(t)]);
+    }
+    return pts;
+  }
+  const circle = (r, n = 90) => Array.from({ length: n }, (_, i) => {
+    const t = (i / n) * Math.PI * 2;
+    return [r * Math.cos(-t), r * Math.sin(-t)]; // opposite winding: a hole
+  });
+  const flowerNorm = normalizeInput({ closed: [flower(), circle(12)], open: [] }, 180);
+  let bad = 0, runs = 0;
+  for (const pieces of [30, 60, 90]) {
+    for (let seed = 1; seed <= 5; seed++) {
+      const m = buildPuzzle(flowerNorm, { targetPieces: pieces, seed: seed * 101, surfaceMode: 'none' });
+      runs++;
+      let ov = 0, split = 0;
+      for (let i = 0; i < m.pieces.length; i++) {
+        if (toRegions(m.pieces[i].rings).length !== 1) split++;
+        for (let k = i + 1; k < m.pieces.length; k++) ov += area(intersect(m.pieces[i].rings, m.pieces[k].rings));
+      }
+      const silArea = 180 * 180 * 0.5; // loose scale reference
+      const gapFrac = m.stats.uncoveredMM2 / silArea;
+      if (ov > 0.01 || split || gapFrac > 0.003) {
+        bad++;
+        console.error(`  FAIL - pieces=${pieces} seed=${seed * 101}: overlap=${ov.toFixed(3)} split=${split} uncovered=${m.stats.uncoveredMM2.toFixed(2)} mm²`);
+      }
+    }
+  }
+  check(bad === 0, `${runs} flower builds: disjoint, connected, fully covered`);
+}
+
 console.log('determinism: same seed same geometry');
 {
   const a = buildPuzzle(norm, { targetPieces: 16, seed: 42 });

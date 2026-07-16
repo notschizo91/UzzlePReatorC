@@ -36,8 +36,11 @@ function execute(clipType, subject, clip) {
   return fromClipperPaths(cleanInt(solution));
 }
 
+// Only collapse (near-)duplicate vertices - 1 int unit = 1 micrometre.
+// Anything more aggressive moves vertices, and boundaries shared between
+// separately-computed results drift apart, opening hairline cracks.
 function cleanInt(paths) {
-  const cleaned = Clipper.CleanPolygons(paths, SCALE * 0.005);
+  const cleaned = Clipper.CleanPolygons(paths, 1);
   return cleaned.filter((p) => p.length >= 3);
 }
 
