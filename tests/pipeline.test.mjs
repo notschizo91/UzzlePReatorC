@@ -97,12 +97,27 @@ for (const s of trayShells) {
 }
 check(pieceVol > 1000, `total piece volume ${pieceVol.toFixed(0)} mm^3`);
 
-console.log('modes: none and emboss');
-for (const mode of ['none', 'emboss']) {
+console.log('modes: none, emboss, emboss-fill');
+for (const mode of ['none', 'emboss', 'emboss-fill']) {
   const m = buildPuzzle(norm, { targetPieces: 12, seed: 3, surfaceMode: mode });
   const shells = m.pieces.flatMap((p) => solidToShells(p.layers));
   const bad = shells.filter((s) => !isWatertight(s) || shellVolume(s) <= 0).length;
   check(bad === 0, `${mode}: ${shells.length} shells all watertight with volume`);
+}
+
+console.log('emboss-fill raises solid plateaus, not just outlines');
+{
+  const { area } = await import('../src/geom/clip.js');
+  const raisedArea = (m) => m.pieces.reduce((sum, piece) => {
+    const H = 6;
+    return sum + piece.layers.filter((l) => l.z0 >= H).reduce((s, l) => s + area(l.rings), 0);
+  }, 0);
+  const outline = buildPuzzle(norm, { targetPieces: 12, seed: 3, surfaceMode: 'emboss', pieceHeight: 6 });
+  const filled = buildPuzzle(norm, { targetPieces: 12, seed: 3, surfaceMode: 'emboss-fill', pieceHeight: 6 });
+  const ao = raisedArea(outline), af = raisedArea(filled);
+  // the input has a closed "eye" ring: filling it must raise more area
+  // than stroking its outline
+  check(af > ao + 10, `filled raised area ${af.toFixed(0)} mm² > outline ${ao.toFixed(0)} mm²`);
 }
 
 console.log('pieces: pairwise disjoint, each one connected body');

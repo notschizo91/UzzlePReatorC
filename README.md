@@ -53,7 +53,7 @@ are merged by the slicer).
 | Border height | Tray wall height above the floor |
 | Border width | Tray wall thickness |
 | Pocket clearance | Extra room between pieces and the tray wall |
-| Surface art | Engrave / emboss the SVG's lines on piece tops, or plain |
+| Surface art | Engrave / emboss the SVG's lines on piece tops, or plain. *Emboss + fill* raises the closed artwork shapes as solid plateaus instead of outline ridges (open lines still emboss as strokes) |
 
 ### SVG tips
 

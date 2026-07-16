@@ -179,6 +179,20 @@ export function buildPuzzle(normalized, params) {
     const raw = strokePolylines(lines, p.lineWidth);
     strokes = intersect(raw, offset(silhouette, -p.lineWidth));
   }
+  // --- emboss-fill: closed artwork shapes become solid raised plateaus ---
+  let fills = [];
+  if (p.surfaceMode === 'emboss-fill' && strokes.length) {
+    const silArea = area(silhouette);
+    // skip rings that are (copies of) the outline itself - filling those
+    // would just raise the whole piece top uniformly
+    const closedRings = lines
+      .filter((l) => l.closed)
+      .map((l) => l.pts)
+      .filter((r) => Math.abs(ringArea(r)) < 0.9 * silArea);
+    fills = closedRings.length ? union(closedRings) : [];
+    // open lines still emboss as strokes so nothing from the art is lost
+    fills = fills.length ? union(fills, strokes) : strokes;
+  }
 
   // --- final pieces: inset for the gap, build layered solids ---
   const half = p.gap / 2;
@@ -192,9 +206,10 @@ export function buildPuzzle(normalized, params) {
       const d = Math.min(p.lineDepth, H - 0.6);
       layers.push({ rings, z0: 0, z1: H - d });
       if (top.length) layers.push({ rings: top, z0: H - d, z1: H });
-    } else if (p.surfaceMode === 'emboss' && strokes.length) {
+    } else if ((p.surfaceMode === 'emboss' || p.surfaceMode === 'emboss-fill') && strokes.length) {
       layers.push({ rings, z0: 0, z1: H });
-      const ridges = intersect(strokes, offset(rings, -0.3));
+      const raisedSrc = p.surfaceMode === 'emboss-fill' ? fills : strokes;
+      const ridges = intersect(raisedSrc, offset(rings, -0.3));
       if (ridges.length) layers.push({ rings: ridges, z0: H, z1: H + p.lineDepth });
     } else {
       layers.push({ rings, z0: 0, z1: H });
@@ -245,7 +260,7 @@ export function buildPuzzle(normalized, params) {
       cols, rows,
       widthMM: sizeBB.width,
       heightMM: sizeBB.height,
-      pieceHeightMM: p.surfaceMode === 'emboss' ? H + p.lineDepth : H,
+      pieceHeightMM: p.surfaceMode.startsWith('emboss') ? H + p.lineDepth : H,
       trayHeightMM: p.baseHeight + p.borderHeight,
     },
   };
