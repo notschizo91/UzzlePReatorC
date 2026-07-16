@@ -1,1 +1,1 @@
-{"name":"uzzlepreatorc","private":true,"type":"module","scripts":{"test":"node tests/pipeline.test.mjs","serve":"python3 -m http.server 8000"}}
+{"name":"uzzlepreatorc","private":true,"type":"module","scripts":{"test":"node tests/pipeline.test.mjs","serve":"python3 -m http.server 8000"},"devDependencies":{"playwright-core":"^1.61.1"}}

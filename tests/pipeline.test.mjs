@@ -123,6 +123,37 @@ console.log('pieces: pairwise disjoint, each one connected body');
   }
 }
 
+console.log('starfish: thin swirly arms stay disjoint across seeds');
+{
+  const { intersect, area, toRegions } = await import('../src/geom/clip.js');
+  function starfish(R = 100, n = 720) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      const u = (Math.cos(5 * t) + 1) / 2;
+      const r = R * (0.16 + 0.84 * Math.pow(u, 3.5));
+      const sw = t + 0.35 * Math.pow(u, 2);
+      pts.push([r * Math.cos(sw), r * Math.sin(sw)]);
+    }
+    return pts;
+  }
+  const starNorm = normalizeInput({ closed: [starfish()], open: [] }, 180);
+  let bad = 0, runs = 0;
+  for (const pieces of [15, 30, 60]) {
+    for (let seed = 1; seed <= 6; seed++) {
+      const m = buildPuzzle(starNorm, { targetPieces: pieces, seed: seed * 37, surfaceMode: 'engrave' });
+      runs++;
+      let ov = 0, split = 0;
+      for (let i = 0; i < m.pieces.length; i++) {
+        if (toRegions(m.pieces[i].rings).length !== 1) split++;
+        for (let k = i + 1; k < m.pieces.length; k++) ov += area(intersect(m.pieces[i].rings, m.pieces[k].rings));
+      }
+      if (ov > 0.01 || split) { bad++; console.error(`  FAIL - pieces=${pieces} seed=${seed * 37} overlap=${ov.toFixed(3)} split=${split}`); }
+    }
+  }
+  check(bad === 0, `${runs} starfish builds: all disjoint, no split pieces`);
+}
+
 console.log('determinism: same seed same geometry');
 {
   const a = buildPuzzle(norm, { targetPieces: 16, seed: 42 });

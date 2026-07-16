@@ -57,6 +57,7 @@ function generate() {
       size: Math.max(s.widthMM, s.heightMM),
     });
 
+    window.__model = model; // test hook: inspected by the e2e suite
     const ms = Math.round(performance.now() - t0);
     setStatus(
       `${s.pieces} pieces (${s.cols}×${s.rows} grid) · ` +
