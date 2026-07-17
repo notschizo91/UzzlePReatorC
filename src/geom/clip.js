@@ -84,9 +84,13 @@ export function strokePolylines(lines, width) {
 
 // Group rings into connected regions: [{ outer, holes: [...] }, ...]
 // Also splits disjoint islands into separate regions.
+// StrictlySimple resolves self-touching rings (pinch points at knob necks
+// etc.) into clean simple polygons - triangulators like earcut overfill
+// on weakly-simple input, spilling mesh area into neighbouring pieces.
 export function toRegions(rings) {
   if (!rings.length) return [];
   const c = new Clipper();
+  c.StrictlySimple = true;
   c.AddPaths(toClipperPaths(rings), PolyType.ptSubject, true);
   const tree = new PolyTree();
   c.Execute(ClipType.ctUnion, tree, PolyFillType.pftNonZero, PolyFillType.pftNonZero);

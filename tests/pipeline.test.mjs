@@ -207,6 +207,64 @@ console.log('flower with hole: high piece counts leave no gaps');
   check(bad === 0, `${runs} flower builds: disjoint, connected, fully covered`);
 }
 
+console.log('pumpkin: mesh caps never spill into neighbouring pieces');
+{
+  const { bounds } = await import('../src/geom/clip.js');
+  function pumpkinBody(n = 500) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      const lobe = 1 + 0.03 * Math.cos(8 * t);
+      pts.push([105 * Math.cos(t) * lobe, 85 * Math.sin(t) * lobe]);
+    }
+    return pts;
+  }
+  const rib = (k) => ({
+    pts: Array.from({ length: 61 }, (_, i) => {
+      const u = i / 60;
+      return [k * (1 + 0.35 * Math.sin(Math.PI * u)), 80 - 160 * u];
+    }),
+    closed: false,
+  });
+  const pumpkinNorm = normalizeInput({
+    closed: [pumpkinBody(), [[-8, 82], [-10, 100], [-2, 108], [8, 106], [10, 88], [6, 80]]],
+    open: [rib(-60), rib(-30), rib(0.001), rib(30), rib(60)],
+  }, 190);
+  const pointInRings = (x, y, rings) => {
+    let inside = false;
+    for (const ring of rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i], [xj, yj] = ring[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+    }
+    return inside;
+  };
+  let leaks = 0;
+  for (const seed of [7, 3]) {
+    const m = buildPuzzle(pumpkinNorm, { targetPieces: 40, seed, surfaceMode: 'engrave' });
+    const bbs = m.pieces.map((p) => bounds(p.rings));
+    m.pieces.forEach((piece, i) => {
+      for (const shell of solidToShells(piece.layers)) {
+        for (let t = 0; t < shell.length; t += 9) {
+          if (!(shell[t + 2] === shell[t + 5] && shell[t + 5] === shell[t + 8])) continue; // caps only
+          for (const fx of [1 / 3, 0.5]) {
+            const px = shell[t] * fx + shell[t + 3] * fx + shell[t + 6] * (1 - 2 * fx);
+            const py = shell[t + 1] * fx + shell[t + 4] * fx + shell[t + 7] * (1 - 2 * fx);
+            for (let k = 0; k < m.pieces.length; k++) {
+              if (k === i) continue;
+              const b = bbs[k];
+              if (px < b.minX || px > b.maxX || py < b.minY || py > b.maxY) continue;
+              if (pointInRings(px, py, m.pieces[k].rings)) leaks++;
+            }
+          }
+        }
+      }
+    });
+  }
+  check(leaks === 0, `no cap sample points inside other pieces (${leaks} leaks)`);
+}
+
 console.log('determinism: same seed same geometry');
 {
   const a = buildPuzzle(norm, { targetPieces: 16, seed: 42 });
