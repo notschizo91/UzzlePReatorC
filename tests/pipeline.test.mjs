@@ -299,5 +299,60 @@ console.log('STL export');
   console.log(`  wrote ${f}`);
 }
 
+console.log('3MF export: valid zip, valid model XML, named objects');
+{
+  const { objectsTo3MF } = await import('../src/export/threemf.js');
+  const { inflateRawSync } = await import('node:zlib');
+  const m = buildPuzzle(norm, { targetPieces: 8, seed: 3, surfaceMode: 'engrave' });
+  const objects = [
+    { name: 'tray', shells: solidToShells(m.tray.layers) },
+    ...m.pieces.map((p, i) => ({ name: `piece-${i + 1}`, shells: solidToShells(p.layers) })),
+  ];
+  const buf = Buffer.from(await objectsTo3MF(objects));
+
+  // walk the central directory
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  check(eocd > 0, 'zip end-of-central-directory found');
+  const count = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  const entries = {};
+  for (let i = 0; i < count; i++) {
+    check(buf.readUInt32LE(off) === 0x02014b50, 'central header signature');
+    const method = buf.readUInt16LE(off + 10);
+    const crc = buf.readUInt32LE(off + 16);
+    const compSize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const lfhOff = buf.readUInt32LE(off + 42);
+    const name = buf.toString('utf8', off + 46, off + 46 + nameLen);
+    const dataStart = lfhOff + 30 + buf.readUInt16LE(lfhOff + 26) + buf.readUInt16LE(lfhOff + 28);
+    const raw = buf.subarray(dataStart, dataStart + compSize);
+    const data = method === 8 ? inflateRawSync(raw) : Buffer.from(raw);
+    entries[name] = { data, crc };
+    off += 46 + nameLen;
+  }
+  check(count === 3, `3 zip entries (got ${count})`);
+  check(!!entries['3D/3dmodel.model'] && !!entries['[Content_Types].xml'] && !!entries['_rels/.rels'], 'expected entry names present');
+
+  const xml = entries['3D/3dmodel.model'].data.toString('utf8');
+  const objCount = (xml.match(/<object /g) || []).length;
+  check(objCount === objects.length, `${objCount} objects in model (expected ${objects.length})`);
+  check(xml.includes('name="tray"') && xml.includes('name="piece-1"'), 'objects are named');
+  check(xml.includes('unit="millimeter"'), 'millimetre units');
+  check(!xml.includes('NaN'), 'no NaN coordinates');
+  const triCount = (xml.match(/<triangle /g) || []).length;
+  const vertCount = (xml.match(/<vertex /g) || []).length;
+  check(triCount > 100 && vertCount > 100, `${vertCount} vertices, ${triCount} triangles`);
+  // every triangle index must reference an existing vertex of its object
+  let indexOk = true;
+  for (const objXml of xml.split('<object ').slice(1)) {
+    const nVerts = (objXml.match(/<vertex /g) || []).length;
+    for (const t of objXml.matchAll(/<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"/g)) {
+      if (+t[1] >= nVerts || +t[2] >= nVerts || +t[3] >= nVerts) { indexOk = false; break; }
+    }
+  }
+  check(indexOk, 'all triangle indices in range');
+  console.log(`  3MF size: ${(buf.length / 1024).toFixed(0)} KB`);
+}
+
 if (failures) { console.error(`\n${failures} FAILURE(S)`); process.exit(1); }
 console.log('\nAll checks passed.');

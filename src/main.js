@@ -2,6 +2,7 @@ import { parseSVG } from './svgload.js';
 import { normalizeInput, buildPuzzle, DEFAULT_PARAMS } from './geom/puzzle.js';
 import { solidToShells, translateShells } from './geom/mesh.js';
 import { shellsToSTL } from './export/stl.js';
+import { objectsTo3MF } from './export/threemf.js';
 import { bounds } from './geom/clip.js';
 import { Viewer } from './preview.js';
 
@@ -147,6 +148,21 @@ $('exportAll').addEventListener('click', () => {
   const dx = trayBB.width + 15;
   const moved = translateShells(allPieceShells(), dx, 0, 0);
   download(shellsToSTL([...trayShells, ...moved], 'puzzle'), `${svgName}-all.stl`);
+});
+
+$('export3mf').addEventListener('click', async () => {
+  // one 3MF with the tray and every piece as separate named objects;
+  // pieces are placed beside the tray on the build plate
+  const trayBB = bounds(model.tray.layers[0].rings);
+  const dx = trayBB.width + 15;
+  const objects = [
+    { name: 'tray', shells: trayShells },
+    ...pieceShells.map((p, i) => ({
+      name: `piece-${String(i + 1).padStart(2, '0')}`,
+      shells: translateShells(p.shells, dx, 0, 0),
+    })),
+  ];
+  download(await objectsTo3MF(objects), `${svgName}.3mf`);
 });
 
 setStatus('Load an SVG (or try the sample) to generate a puzzle.');

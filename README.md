@@ -24,8 +24,9 @@ drop into.
   **embossed** onto the piece tops so the assembled puzzle still shows the
   picture — or leave tops plain.
 - **Live 3D preview** with an explode slider (three.js).
-- **Exports:** pieces STL, tray STL, or both side by side. Millimetre
-  units, Z-up, watertight shells.
+- **Exports:** pieces STL, tray STL, both side by side, or a single
+  **3MF** with the tray and every piece as separate named objects
+  (`tray`, `piece-01`, ...). Millimetre units, Z-up, watertight shells.
 
 ## Usage
 
@@ -82,6 +83,5 @@ Vendored libraries (`vendor/`): [three.js](https://threejs.org) (MIT),
 
 ## Roadmap
 
-- 3MF export (named objects per piece)
 - Piece numbering embossed on the undersides
 - Alternative cut patterns (Voronoi, region-based)
