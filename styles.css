@@ -27,6 +27,13 @@ h2 {
 }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.span2 { grid-column: 1 / -1; }
+input[type="text"] {
+  width: 100%; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid #353a45; background: #14161a; color: #e6e8ee;
+  font: inherit;
+}
+input[type="text"]:focus { outline: 1px solid #5b8cff; }
 label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #b7bfcc; }
 input[type="number"], select {
   width: 100%; padding: 6px 8px; border-radius: 6px;

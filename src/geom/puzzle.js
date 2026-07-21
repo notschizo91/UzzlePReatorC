@@ -16,9 +16,10 @@ export const DEFAULT_PARAMS = {
   baseHeight: 2.4,      // mm, tray floor under the pieces
   borderHeight: 8,      // mm, tray wall height above the floor
   borderWidth: 5,       // mm, tray wall thickness
-  surfaceMode: 'engrave', // 'none' | 'engrave' | 'emboss'
+  surfaceMode: 'engrave', // 'none' | 'engrave' | 'emboss' | 'emboss-fill'
   lineWidth: 1.2,       // mm, engraved/embossed line width
   lineDepth: 1.0,       // mm, groove depth / ridge height
+  cutMode: 'jigsaw',    // 'jigsaw' | 'letters' (each connected region = one piece)
 };
 
 // A "solid" is a list of stacked extrusion layers; each layer is a set of
@@ -74,17 +75,9 @@ function centroidOf(rings) {
   return n ? [sx / n, sy / n] : [0, 0];
 }
 
-/**
- * Build the whole model.
- * @returns {{ pieces: [{rings, layers, centroid}], tray: {layers}, stats, warnings }}
- */
-export function buildPuzzle(normalized, params) {
-  const p = { ...DEFAULT_PARAMS, ...params };
-  const warnings = [];
-  const { silhouette, lines } = normalized;
-  const bb = bounds(silhouette);
-
-  // --- cut the silhouette with the jigsaw grid ---
+// Cut the silhouette with a randomized jigsaw grid and merge slivers.
+// Returns the fragment list with grid metadata attached as .gridInfo.
+function cutWithJigsaw(silhouette, bb, p, warnings) {
   const { cols, rows } = chooseGrid(bb.width, bb.height, p.targetPieces);
   const rng = mulberry32(p.seed);
   const pad = 0.5; // grid overhangs the silhouette slightly
@@ -166,6 +159,41 @@ export function buildPuzzle(normalized, params) {
     }
   }
 
+  fragments.gridInfo = { cols, rows, keepMin };
+  return fragments;
+}
+
+/**
+ * Build the whole model.
+ * @returns {{ pieces: [{rings, layers, centroid}], tray: {layers}, stats, warnings }}
+ */
+export function buildPuzzle(normalized, params) {
+  const p = { ...DEFAULT_PARAMS, ...params };
+  const warnings = [];
+  const { silhouette, lines } = normalized;
+  const bb = bounds(silhouette);
+
+  let fragments = [];
+  let cols = 0, rows = 0;
+  let keepMin = 4;
+
+  if (p.cutMode === 'letters') {
+    // Each connected region of the silhouette (a letter, a shape) is one
+    // whole piece - the classic name-puzzle cut.
+    for (const region of toRegions(silhouette)) {
+      fragments.push({ cell: [0, fragments.length], rings: [region.outer, ...region.holes] });
+    }
+    if (!fragments.length) throw new Error('No letter outlines found.');
+    cols = fragments.length;
+    rows = 1;
+  } else {
+    fragments = cutWithJigsaw(silhouette, bb, p, warnings);
+    const grid = fragments.gridInfo;
+    cols = grid.cols;
+    rows = grid.rows;
+    keepMin = grid.keepMin;
+  }
+
   // How much of the outline the pieces actually cover (pre-inset).
   const uncoveredMM2 = area(difference(silhouette, fragments.flatMap((f) => f.rings)));
   const silArea = area(silhouette);
@@ -240,7 +268,16 @@ export function buildPuzzle(normalized, params) {
 
   // --- tray ---
   const pocket = offset(silhouette, half + p.trayClearance);
-  const outerWall = offset(pocket, p.borderWidth);
+  let outerWall;
+  if (p.cutMode === 'letters') {
+    // name-puzzle board: one rounded rectangle around all the letters
+    const pb = bounds(pocket);
+    outerWall = offset([[
+      [pb.minX, pb.minY], [pb.maxX, pb.minY], [pb.maxX, pb.maxY], [pb.minX, pb.maxY],
+    ]], p.borderWidth);
+  } else {
+    outerWall = offset(pocket, p.borderWidth);
+  }
   const wallRing = difference(outerWall, pocket);
   const tray = {
     layers: [

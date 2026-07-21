@@ -21,6 +21,21 @@
   </div>
   <div id="fileLabel" class="filelabel">no file loaded — you can also drag &amp; drop</div>
 
+  <h2>Name puzzle</h2>
+  <div class="grid">
+    <label class="span2">Name / text<input id="nameText" type="text" placeholder="e.g. Emma"></label>
+    <label>Cut
+      <select id="cutMode">
+        <option value="letters" selected>Letters = pieces</option>
+        <option value="jigsaw">Jigsaw over text</option>
+      </select>
+    </label>
+    <label>Letter spacing (%)<input id="letterSpacing" type="number" value="8" min="0" max="60" step="1"></label>
+    <label class="span2 file-btn">Upload font (.ttf / .otf / .woff)<input id="fontFile" type="file" accept=".ttf,.otf,.woff,font/ttf,font/otf,font/woff"></label>
+    <button id="makeName" class="span2" type="button">Create name puzzle</button>
+  </div>
+  <div id="fontLabel" class="filelabel">using built-in font: Liberation Sans Bold</div>
+
   <h2>Puzzle</h2>
   <div class="grid">
     <label>Width (mm)<input id="targetWidth" type="number" value="180" min="30" max="400" step="5"></label>
@@ -69,7 +84,7 @@
     <button id="export3mf" disabled>3MF (named parts)</button>
   </div>
 
-  <p class="foot">v0.7 — everything runs locally in your browser. Millimetre units, Z-up.
+  <p class="foot">v0.8 — everything runs locally in your browser. Millimetre units, Z-up.
   If this version number doesn't match the repo, hard-refresh (Ctrl/Cmd+Shift+R).</p>
 </aside>
 <main id="stage">

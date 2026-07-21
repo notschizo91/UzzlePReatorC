@@ -1,4 +1,5 @@
 import { parseSVG } from './svgload.js';
+import { parseFont, textToInput } from './text.js';
 import { normalizeInput, buildPuzzle, DEFAULT_PARAMS } from './geom/puzzle.js';
 import { solidToShells, translateShells } from './geom/mesh.js';
 import { shellsToSTL } from './export/stl.js';
@@ -9,7 +10,10 @@ import { Viewer } from './preview.js';
 const $ = (id) => document.getElementById(id);
 
 const viewer = new Viewer($('view'));
-let parsed = null;    // output of parseSVG
+let parsed = null;    // output of parseSVG or textToInput
+let source = 'svg';   // 'svg' | 'text' - what "parsed" came from
+let cutMode = 'jigsaw';
+let fontObj = null;   // parsed opentype font (lazy default)
 let model = null;     // output of buildPuzzle
 let pieceShells = []; // [{shells, centroid}]
 let trayShells = [];
@@ -28,6 +32,7 @@ function readParams() {
     p[key] = Number.isFinite(v) ? v : DEFAULT_PARAMS[key];
   }
   p.surfaceMode = $('surfaceMode').value;
+  p.cutMode = cutMode;
   return p;
 }
 
@@ -83,8 +88,35 @@ function scheduleGenerate() {
 async function loadSvgText(text, name) {
   try {
     parsed = parseSVG(text);
+    source = 'svg';
+    cutMode = 'jigsaw';
     svgName = (name || 'puzzle').replace(/\.svg\b.*$/i, '').trim() || 'puzzle';
     $('fileLabel').textContent = name || 'loaded';
+    generate();
+  } catch (e) {
+    console.error(e);
+    setStatus(e.message || String(e), true);
+  }
+}
+
+// --- name puzzle ---
+async function ensureFont() {
+  if (fontObj) return fontObj;
+  const res = await fetch('./assets/default-font.ttf');
+  fontObj = parseFont(await res.arrayBuffer());
+  return fontObj;
+}
+
+async function makeNamePuzzle() {
+  const text = $('nameText').value;
+  if (!text.trim()) { setStatus('Type a name first.', true); return; }
+  try {
+    const font = await ensureFont();
+    parsed = textToInput(font, text, parseFloat($('letterSpacing').value) || 0);
+    source = 'text';
+    cutMode = $('cutMode').value;
+    svgName = text.trim().replace(/[^\w-]+/g, '_').slice(0, 30) || 'name-puzzle';
+    $('fileLabel').textContent = `name puzzle: "${text.trim()}"`;
     generate();
   } catch (e) {
     console.error(e);
@@ -105,6 +137,26 @@ $('file').addEventListener('change', async (e) => {
 $('randomize').addEventListener('click', () => {
   $('seed').value = Math.floor(Math.random() * 100000);
   generate();
+});
+
+$('makeName').addEventListener('click', makeNamePuzzle);
+$('nameText').addEventListener('keydown', (e) => { if (e.key === 'Enter') makeNamePuzzle(); });
+for (const id of ['cutMode', 'letterSpacing']) {
+  $(id).addEventListener('change', () => { if (source === 'text') makeNamePuzzle(); });
+}
+
+$('fontFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try {
+    fontObj = parseFont(await f.arrayBuffer());
+    const label = fontObj.names?.fullName?.en || f.name;
+    $('fontLabel').textContent = `font: ${label}`;
+    if (source === 'text' && $('nameText').value.trim()) makeNamePuzzle();
+  } catch (err) {
+    console.error(err);
+    setStatus(`Could not read font: ${err.message || err} (WOFF2 is not supported - use TTF/OTF/WOFF)`, true);
+  }
 });
 
 $('sample').addEventListener('click', async () => {

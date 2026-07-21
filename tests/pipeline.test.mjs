@@ -299,6 +299,32 @@ console.log('STL export');
   console.log(`  wrote ${f}`);
 }
 
+console.log('name puzzle: font -> letters-as-pieces');
+{
+  const { parseFont, textToInput } = await import('../src/text.js');
+  const { intersect, area } = await import('../src/geom/clip.js');
+  const { readFileSync } = await import('node:fs');
+  const buf = readFileSync(new URL('../assets/default-font.ttf', import.meta.url));
+  const font = parseFont(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  const nameNorm = normalizeInput(textToInput(font, 'Emma', 8), 180);
+
+  const m = buildPuzzle(nameNorm, { cutMode: 'letters', surfaceMode: 'none', pieceHeight: 8, borderHeight: 5 });
+  check(m.pieces.length === 4, `"Emma" -> ${m.pieces.length} letter pieces (expected 4)`);
+  check(m.pieces.some((p) => p.rings.length > 1), 'the "a" keeps its counter hole');
+  let ov = 0;
+  for (let i = 0; i < m.pieces.length; i++) {
+    for (let k = i + 1; k < m.pieces.length; k++) ov += area(intersect(m.pieces[i].rings, m.pieces[k].rings));
+  }
+  check(ov < 0.01, `letter pieces disjoint (overlap ${ov.toFixed(4)} mm²)`);
+  const shells = [...m.pieces.flatMap((p) => solidToShells(p.layers)), ...solidToShells(m.tray.layers)];
+  const bad = shells.filter((s) => !isWatertight(s) || shellVolume(s) <= 0).length;
+  check(bad === 0, `${shells.length} name-puzzle shells watertight with volume`);
+  check(m.stats.uncoveredMM2 < 0.01, 'letters fully cover the silhouette');
+
+  const mj = buildPuzzle(nameNorm, { cutMode: 'jigsaw', targetPieces: 12, seed: 5, surfaceMode: 'none' });
+  check(mj.pieces.length >= 4 && mj.stats.uncoveredMM2 < 1, `jigsaw-over-text: ${mj.pieces.length} pieces, covered`);
+}
+
 console.log('3MF export: valid zip, valid model XML, named objects');
 {
   const { objectsTo3MF } = await import('../src/export/threemf.js');

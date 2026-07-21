@@ -20,6 +20,9 @@ drop into.
 - **Tray generator.** Silhouette-shaped pocket with configurable
   *base height* (floor under the pieces), *border height* (wall above the
   floor), *border width*, and pocket clearance.
+- **Name puzzles.** Type a name (built-in font, or upload a .ttf/.otf/.woff)
+  and get the classic kids' puzzle: each letter is a whole piece fitting a
+  letter-shaped pocket in a rounded board — or jigsaw-cut the text instead.
 - **Surface art.** The SVG's interior lines can be **engraved** into or
   **embossed** onto the piece tops so the assembled puzzle still shows the
   picture — or leave tops plain.
