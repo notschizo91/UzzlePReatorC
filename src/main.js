@@ -1,6 +1,8 @@
 import { parseSVG } from './svgload.js';
 import { parseFont, textToInput } from './text.js';
 import { normalizeInput, buildPuzzle, DEFAULT_PARAMS } from './geom/puzzle.js';
+import { extractFaces } from './geom/faces.js';
+import { SurfacePicker } from './surfacepicker.js';
 import { solidToShells, translateShells } from './geom/mesh.js';
 import { shellsToSTL } from './export/stl.js';
 import { objectsTo3MF } from './export/threemf.js';
@@ -18,6 +20,12 @@ let model = null;     // output of buildPuzzle
 let pieceShells = []; // [{shells, centroid}]
 let trayShells = [];
 let svgName = 'puzzle';
+
+// surface selection state
+const picker = new SurfacePicker();
+let faces = [];         // extractFaces output for the current art
+let faceHeights = [];   // mm per face, 0 = flat
+let facesLineWidth = null;
 
 const NUM_PARAMS = [
   'targetWidth', 'targetPieces', 'seed', 'pieceHeight', 'gap',
@@ -42,12 +50,43 @@ function setStatus(text, isError = false) {
   el.classList.toggle('error', isError);
 }
 
+// Faces live in normalized (mm, centred) space, so they must be rebuilt
+// whenever the art, target width or separator width changes.
+function currentNormalized(params) {
+  return normalizeInput(parsed, params.targetWidth, {
+    holesFromWinding: $('holeMode').value === 'holes',
+  });
+}
+
+function ensureFaces(norm, lineWidth) {
+  const key = `${lineWidth}|${norm.silhouette.length}`;
+  if (facesLineWidth === key && faces.length) return;
+  const prevCount = faces.length;
+  faces = extractFaces(norm, lineWidth);
+  facesLineWidth = key;
+  // keep heights when the face set is unchanged (indices are area-sorted
+  // and therefore stable); otherwise start flat
+  if (faces.length !== prevCount) faceHeights = faces.map(() => 0);
+  else faceHeights = faces.map((_, i) => faceHeights[i] || 0);
+  $('pickSurfaces').disabled = faces.length === 0;
+  updateSurfaceLabel();
+}
+
+function updateSurfaceLabel() {
+  const raised = faceHeights.filter((h) => h > 0).length;
+  $('surfaceLabel').textContent = faces.length
+    ? `${faces.length} surfaces detected · ${raised} raised`
+    : 'load art, then pick surfaces to raise (eyes, horn, …)';
+}
+
 function generate() {
   if (!parsed) return;
   const params = readParams();
   try {
     const t0 = performance.now();
-    const norm = normalizeInput(parsed, params.targetWidth);
+    const norm = currentNormalized(params);
+    ensureFaces(norm, params.lineWidth);
+    params.surfaces = faces.map((f, i) => ({ rings: f.rings, height: faceHeights[i] || 0 }));
     model = buildPuzzle(norm, params);
 
     pieceShells = model.pieces.map((piece) => ({
@@ -68,7 +107,8 @@ function generate() {
     setStatus(
       `${s.pieces} pieces (${s.cols}×${s.rows} grid) · ` +
       `${s.widthMM.toFixed(0)}×${s.heightMM.toFixed(0)} mm · ` +
-      `tray ${s.trayHeightMM.toFixed(1)} mm tall · ${ms} ms`,
+      `tray ${s.trayHeightMM.toFixed(1)} mm tall · ${ms} ms` +
+      (s.raisedSurfaces ? `\n${s.raisedSurfaces} raised surfaces · pieces up to ${s.pieceHeightMM.toFixed(1)} mm tall` : ''),
     );
     $('warnings').textContent = model.warnings.join('\n');
     for (const btn of document.querySelectorAll('.exports button')) btn.disabled = false;
@@ -90,6 +130,7 @@ async function loadSvgText(text, name) {
     parsed = parseSVG(text);
     source = 'svg';
     cutMode = 'jigsaw';
+    faces = []; faceHeights = []; facesLineWidth = null;
     svgName = (name || 'puzzle').replace(/\.svg\b.*$/i, '').trim() || 'puzzle';
     $('fileLabel').textContent = name || 'loaded';
     generate();
@@ -114,6 +155,8 @@ async function makeNamePuzzle() {
     const font = await ensureFont();
     parsed = textToInput(font, text, parseFloat($('letterSpacing').value) || 0);
     source = 'text';
+    faces = []; faceHeights = []; facesLineWidth = null;
+    $('holeMode').value = 'holes'; // letter counters must stay open
     cutMode = $('cutMode').value;
     svgName = text.trim().replace(/[^\w-]+/g, '_').slice(0, 30) || 'name-puzzle';
     $('fileLabel').textContent = `name puzzle: "${text.trim()}"`;
@@ -127,6 +170,10 @@ async function makeNamePuzzle() {
 // --- wire up UI ---
 for (const key of NUM_PARAMS) $(key).addEventListener('input', scheduleGenerate);
 $('surfaceMode').addEventListener('change', scheduleGenerate);
+$('holeMode').addEventListener('change', () => {
+  faces = []; faceHeights = []; facesLineWidth = null; // geometry changed
+  scheduleGenerate();
+});
 $('explode').addEventListener('input', (e) => viewer.setExplode(parseFloat(e.target.value)));
 
 $('file').addEventListener('change', async (e) => {
@@ -136,6 +183,20 @@ $('file').addEventListener('change', async (e) => {
 
 $('randomize').addEventListener('click', () => {
   $('seed').value = Math.floor(Math.random() * 100000);
+  generate();
+});
+
+$('pickSurfaces').addEventListener('click', async () => {
+  if (!parsed) return;
+  const params = readParams();
+  const norm = currentNormalized(params);
+  ensureFaces(norm, params.lineWidth);
+  if (!faces.length) { setStatus('No enclosed surfaces found in this art.', true); return; }
+  const result = await picker.open(faces, faceHeights, `${svgName}.svg`, 2);
+  if (!result) return; // cancelled
+  faceHeights = result;
+  updateSurfaceLabel();
+  if (faceHeights.some((h) => h > 0)) $('surfaceMode').value = 'surfaces';
   generate();
 });
 

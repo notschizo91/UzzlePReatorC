@@ -16,10 +16,11 @@ export const DEFAULT_PARAMS = {
   baseHeight: 2.4,      // mm, tray floor under the pieces
   borderHeight: 8,      // mm, tray wall height above the floor
   borderWidth: 5,       // mm, tray wall thickness
-  surfaceMode: 'engrave', // 'none' | 'engrave' | 'emboss' | 'emboss-fill'
+  surfaceMode: 'engrave', // 'none'|'engrave'|'emboss'|'emboss-fill'|'surfaces'
   lineWidth: 1.2,       // mm, engraved/embossed line width
   lineDepth: 1.0,       // mm, groove depth / ridge height
   cutMode: 'jigsaw',    // 'jigsaw' | 'letters' (each connected region = one piece)
+  surfaces: [],         // [{rings, height}] per-face raise, surfaceMode 'surfaces'
 };
 
 // A "solid" is a list of stacked extrusion layers; each layer is a set of
@@ -32,8 +33,18 @@ export const DEFAULT_PARAMS = {
  * input: { closed: [ring,...], open: [{pts, closed:false},...] } in
  * arbitrary SVG user units, y-up.
  */
-export function normalizeInput(input, targetWidth) {
-  let silhouette = input.closed.length ? union(input.closed) : [];
+export function normalizeInput(input, targetWidth, opts = {}) {
+  // Nested closed shapes are ambiguous: in a font an inner ring is a
+  // counter (a real hole), but in line art an inner circle is an eye and
+  // must stay solid. Clipper's nonzero rule would silently punch it out
+  // whenever the inner ring happens to wind the other way, so unless the
+  // caller asks for winding-based holes every ring is oriented alike.
+  const holesFromWinding = opts.holesFromWinding ?? false;
+  const closedForFill = holesFromWinding
+    ? input.closed
+    : input.closed.map((r) => (ringArea(r) < 0 ? r.slice().reverse() : r));
+
+  let silhouette = closedForFill.length ? union(closedForFill) : [];
   const allLines = [
     ...input.closed.map((pts) => ({ pts, closed: true })),
     ...input.open,
@@ -226,9 +237,18 @@ export function buildPuzzle(normalized, params) {
   const half = p.gap / 2;
   const H = p.pieceHeight;
   const pieces = [];
+  const raised = (p.surfaces || []).filter((s) => s.height > 0 && s.rings?.length);
+
   const buildPiece = (rings) => {
     const layers = [];
-    if (p.surfaceMode === 'engrave' && strokes.length) {
+    if (p.surfaceMode === 'surfaces') {
+      // Each selected face is raised to its own height on top of the piece.
+      layers.push({ rings, z0: 0, z1: H });
+      for (const s of raised) {
+        const part = intersect(s.rings, rings);
+        if (part.length) layers.push({ rings: part, z0: H, z1: H + s.height });
+      }
+    } else if (p.surfaceMode === 'engrave' && strokes.length) {
       const grooves = intersect(strokes, rings);
       const top = grooves.length ? difference(rings, grooves) : rings;
       const d = Math.min(p.lineDepth, H - 0.6);
@@ -297,7 +317,10 @@ export function buildPuzzle(normalized, params) {
       cols, rows,
       widthMM: sizeBB.width,
       heightMM: sizeBB.height,
-      pieceHeightMM: p.surfaceMode.startsWith('emboss') ? H + p.lineDepth : H,
+      pieceHeightMM: p.surfaceMode === 'surfaces'
+        ? H + Math.max(0, ...raised.map((s) => s.height))
+        : (p.surfaceMode.startsWith('emboss') ? H + p.lineDepth : H),
+      raisedSurfaces: raised.length,
       trayHeightMM: p.baseHeight + p.borderHeight,
     },
   };

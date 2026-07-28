@@ -26,6 +26,10 @@ drop into.
 - **Surface art.** The SVG's interior lines can be **engraved** into or
   **embossed** onto the piece tops so the assembled puzzle still shows the
   picture — or leave tops plain.
+- **Per-surface extrusion.** Click *Select surfaces & heights…* to open a
+  clickable preview of every enclosed region in the art, then give each one
+  its own raise height (eyes 2 mm, horn 4.5 mm, …). Different heights make
+  filament/colour assignment trivial in Bambu Studio, PrusaSlicer or Orca.
 - **Live 3D preview** with an explode slider (three.js).
 - **Exports:** pieces STL, tray STL, both side by side, or a single
   **3MF** with the tray and every piece as separate named objects
@@ -57,7 +61,8 @@ are merged by the slicer).
 | Border height | Tray wall height above the floor |
 | Border width | Tray wall thickness |
 | Pocket clearance | Extra room between pieces and the tray wall |
-| Surface art | Engrave / emboss the SVG's lines on piece tops, or plain. *Emboss + fill* raises the closed artwork shapes as solid plateaus instead of outline ridges (open lines still emboss as strokes) |
+| Surface art | Engrave / emboss the SVG's lines on piece tops, or plain. *Emboss + fill* raises the closed artwork shapes as solid plateaus instead of outline ridges (open lines still emboss as strokes). *Selected surfaces* uses the per-surface heights from the picker |
+| Inner shapes | Whether a shape nested inside another is a solid surface (an eye) or cut clean through (a donut, a letter counter) |
 
 ### SVG tips
 

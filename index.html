@@ -44,6 +44,12 @@
     <label>Gap between pieces (mm)<input id="gap" type="number" value="0.35" min="0" max="2" step="0.05"></label>
     <label>Seed<input id="seed" type="number" value="7" min="0" step="1"></label>
     <label class="btnlabel">&nbsp;<button id="randomize" type="button">🎲 Randomize</button></label>
+    <label class="span2">Inner shapes
+      <select id="holeMode">
+        <option value="solid" selected>Solid (eyes stay filled)</option>
+        <option value="holes">Cut through (donuts, letter counters)</option>
+      </select>
+    </label>
   </div>
 
   <h2>Tray</h2>
@@ -61,12 +67,15 @@
         <option value="engrave" selected>Engrave lines</option>
         <option value="emboss">Emboss lines</option>
         <option value="emboss-fill">Emboss + fill</option>
+        <option value="surfaces">Selected surfaces</option>
         <option value="none">Plain top</option>
       </select>
     </label>
     <label>Line width (mm)<input id="lineWidth" type="number" value="1.2" min="0.3" max="5" step="0.1"></label>
     <label>Line depth (mm)<input id="lineDepth" type="number" value="1.0" min="0.2" max="5" step="0.1"></label>
+    <button id="pickSurfaces" class="span2" type="button" disabled>Select surfaces &amp; heights…</button>
   </div>
+  <div id="surfaceLabel" class="filelabel">load art, then pick surfaces to raise (eyes, horn, …)</div>
 
   <h2>Preview</h2>
   <label class="slider">Explode
@@ -84,7 +93,7 @@
     <button id="export3mf" disabled>3MF (named parts)</button>
   </div>
 
-  <p class="foot">v0.8 — everything runs locally in your browser. Millimetre units, Z-up.
+  <p class="foot">v0.9 — everything runs locally in your browser. Millimetre units, Z-up.
   If this version number doesn't match the repo, hard-refresh (Ctrl/Cmd+Shift+R).</p>
 </aside>
 <main id="stage">

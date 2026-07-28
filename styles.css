@@ -68,4 +68,55 @@ button:disabled { opacity: 0.45; cursor: default; }
 .warnings { font-size: 11.5px; color: #e8c976; white-space: pre-wrap; }
 
 .exports { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* --- surface picker overlay --- */
+.picker {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column;
+  background: #0d0b14;
+}
+.picker-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; border-bottom: 1px solid #2a2440;
+  background: #120f1c;
+}
+.picker-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px; color: #d9d3ee; flex: 1; min-width: 220px;
+}
+.picker-btns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.picker-btns button {
+  padding: 6px 14px; border-radius: 999px;
+  border: 1px solid #3b3357; background: #1d1830; color: #ded8f0;
+  font-size: 13px; cursor: pointer;
+}
+.picker-btns button:hover { background: #29223f; }
+.picker-btns button.primary { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+.picker-btns button.primary:hover { background: #9d74f7; }
+.picker-btns button.primary-ghost { border-color: #8b5cf6; color: #c4a9ff; }
+.picker-height {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: #a89ec9; flex-direction: row;
+}
+.picker-height input {
+  width: 74px; padding: 5px 8px; border-radius: 6px;
+  border: 1px solid #3b3357; background: #14111f; color: #ded8f0; font: inherit;
+}
+.picker-svg { flex: 1; width: 100%; min-height: 0; display: block; }
+.picker-hint {
+  padding: 8px 14px; font-size: 12px; color: #7d76a0;
+  border-top: 1px solid #2a2440; background: #120f1c;
+}
+.face {
+  fill: #46405e;
+  stroke: #0d0b14;
+  stroke-width: 0.6;
+  cursor: pointer;
+  transition: fill 0.1s;
+}
+.face:hover { fill: #6d6392; }
+.face.raised {
+  fill: color-mix(in srgb, #a855f7 calc(var(--lvl) * 100%), #46405e);
+}
+.face.sel { stroke: #f0abfc; stroke-width: 1.4; }
 .foot { margin-top: 18px; font-size: 11px; color: #6d7686; }

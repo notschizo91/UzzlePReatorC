@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+  <!-- Simple unicorn head: outline + horn, ear, eye, nostril, mane lines -->
+  <g fill="none" stroke="#000" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <!-- head outline (closed) -->
+    <path d="M 92 96
+             C 78 112 70 136 72 160
+             C 74 186 88 210 108 226
+             C 122 238 140 246 158 248
+             C 176 250 194 246 206 236
+             C 216 228 220 216 218 204
+             C 228 196 234 184 232 170
+             C 230 152 218 138 202 130
+             C 196 116 186 104 172 98
+             C 158 92 140 90 124 92
+             C 112 93 100 94 92 96 Z"/>
+    <!-- horn -->
+    <path d="M 150 88 L 162 20 L 178 86 Z"/>
+    <!-- horn spiral lines -->
+    <path d="M 154 70 L 172 66"/>
+    <path d="M 158 52 L 170 49"/>
+    <!-- ear -->
+    <path d="M 96 92 L 84 44 L 122 84 Z"/>
+    <!-- eye -->
+    <circle cx="140" cy="150" r="13"/>
+    <!-- nostril -->
+    <ellipse cx="205" cy="212" rx="7" ry="5"/>
+    <!-- cheek / muzzle line -->
+    <path d="M 168 196 Q 196 190 214 200"/>
+    <!-- mane strands -->
+    <path d="M 100 118 Q 74 138 82 172"/>
+    <path d="M 90 150 Q 66 174 80 204"/>
+  </g>
+</svg>

@@ -55,6 +55,38 @@ for (const [pieces, seed, mode] of [[30, 7, 'engrave'], [45, 3, 'engrave'], [60,
   if (!ok) errors.push(`starfish overlap (pieces=${pieces} seed=${seed})`);
 }
 
+// --- surface picker: select faces, give them heights ---
+await page.setInputFiles('#file', new URL('./fixtures/unicorn.svg', import.meta.url).pathname);
+await page.waitForFunction(() => window.__model, null, { timeout: 30000 });
+await page.waitForTimeout(400);
+await page.click('#pickSurfaces');
+await page.waitForSelector('.picker-svg', { timeout: 10000 });
+const nFaces = await page.locator('.face').count();
+console.log(`picker: ${nFaces} faces detected`);
+if (nFaces !== 5) errors.push(`expected 5 unicorn faces, got ${nFaces}`);
+
+// faces are area-sorted: 0 body, 1 horn, 2 ear, 3 eye, 4 nostril
+for (const i of [3, 4]) await page.locator('.face').nth(i).click({ force: true });
+await page.fill('.picker-height input', '2');
+await page.click('button.primary-ghost');
+await page.locator('.face').nth(1).click({ force: true });
+await page.fill('.picker-height input', '4.5');
+await page.click('button.primary-ghost');
+await page.click('button.primary'); // Done
+await page.waitForFunction(() => !document.querySelector('.picker'), null, { timeout: 5000 });
+await page.waitForTimeout(800);
+
+const surf = await page.evaluate(() => {
+  const m = window.__model;
+  const tops = new Set();
+  for (const p of m.pieces) for (const l of p.layers) tops.add(+l.z1.toFixed(2));
+  return { mode: document.getElementById('surfaceMode').value, raised: m.stats.raisedSurfaces, tops: [...tops].sort((a, b) => a - b) };
+});
+const surfOk = surf.mode === 'surfaces' && surf.raised === 3 &&
+  [6, 8, 10.5].every((z) => surf.tops.includes(z));
+console.log(`${surfOk ? 'ok  ' : 'FAIL'} surfaces: ${surf.raised} raised, layer tops ${surf.tops.join('/')} mm`);
+if (!surfOk) errors.push('surface heights not applied as expected');
+
 await browser.close();
 if (errors.length) { console.error('ERRORS:', errors); process.exit(1); }
 console.log('E2E OK');

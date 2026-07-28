@@ -185,7 +185,7 @@ console.log('flower with hole: high piece counts leave no gaps');
     const t = (i / n) * Math.PI * 2;
     return [r * Math.cos(-t), r * Math.sin(-t)]; // opposite winding: a hole
   });
-  const flowerNorm = normalizeInput({ closed: [flower(), circle(12)], open: [] }, 180);
+  const flowerNorm = normalizeInput({ closed: [flower(), circle(12)], open: [] }, 180, { holesFromWinding: true });
   let bad = 0, runs = 0;
   for (const pieces of [30, 60, 90]) {
     for (let seed = 1; seed <= 5; seed++) {
@@ -299,6 +299,64 @@ console.log('STL export');
   console.log(`  wrote ${f}`);
 }
 
+console.log('surfaces: face detection + per-surface extrusion heights');
+{
+  const { extractFaces } = await import('../src/geom/faces.js');
+  const { intersect, area } = await import('../src/geom/clip.js');
+  const circle = (cx, cy, r, n = 120) => Array.from({ length: n }, (_, i) => {
+    const t = (i / n) * Math.PI * 2;
+    return [cx + r * Math.cos(t), cy + r * Math.sin(t)];
+  });
+  // a "face": head outline, two eyes, a horn triangle, one open smile line
+  const artNorm = normalizeInput({
+    closed: [circle(0, 0, 100), circle(-35, 30, 14), circle(35, 30, 14), [[-10, -60], [10, -60], [0, -20]]],
+    open: [{ pts: [[-40, -30], [0, -45], [40, -30]], closed: false }],
+  }, 160);
+
+  const detected = extractFaces(artNorm, 1.2);
+  check(detected.length === 5, `detected ${detected.length} faces (background, 2 eyes, split horn)`);
+  check(detected[0].area > 10 * detected[1].area, 'largest face is the background body');
+  let faceOverlap = 0;
+  for (let i = 0; i < detected.length; i++) {
+    for (let k = i + 1; k < detected.length; k++) {
+      faceOverlap += area(intersect(detected[i].rings, detected[k].rings));
+    }
+  }
+  check(faceOverlap < 0.01, `faces are disjoint (overlap ${faceOverlap.toFixed(4)} mm²)`);
+
+  // eyes 2 mm, horn 4 mm, body flat
+  const heights = detected.map((_, i) => (i === 1 || i === 2 ? 2 : i === 3 ? 4 : 0));
+  const surfaces = detected.map((f, i) => ({ rings: f.rings, height: heights[i] }));
+  const H = 5;
+  const m = buildPuzzle(artNorm, { cutMode: 'letters', surfaceMode: 'surfaces', pieceHeight: H, surfaces });
+  check(m.stats.raisedSurfaces === 3, `${m.stats.raisedSurfaces} raised surfaces reported`);
+  check(Math.abs(m.stats.pieceHeightMM - (H + 4)) < 1e-6, `tallest point ${m.stats.pieceHeightMM} mm (5 + 4)`);
+
+  const tops = new Set();
+  for (const piece of m.pieces) for (const l of piece.layers) tops.add(+l.z1.toFixed(3));
+  check(tops.has(H) && tops.has(H + 2) && tops.has(H + 4), `layer tops at ${[...tops].sort((a, b) => a - b).join(', ')} mm`);
+
+  const shells = m.pieces.flatMap((p) => solidToShells(p.layers));
+  const bad = shells.filter((s) => !isWatertight(s) || shellVolume(s) <= 0).length;
+  check(bad === 0, `${shells.length} shells watertight with volume`);
+
+  // raised parts must sit within the piece they belong to
+  let spill = 0;
+  for (const piece of m.pieces) {
+    for (const l of piece.layers) {
+      if (l.z0 < H) continue;
+      spill += area(l.rings) - area(intersect(l.rings, piece.rings));
+    }
+  }
+  check(Math.abs(spill) < 0.01, `raised surfaces stay inside their piece (spill ${spill.toFixed(4)} mm²)`);
+
+  // jigsaw + surfaces: raised faces split across pieces, still watertight
+  const mj = buildPuzzle(artNorm, { cutMode: 'jigsaw', targetPieces: 9, seed: 4, surfaceMode: 'surfaces', pieceHeight: H, surfaces });
+  const jShells = mj.pieces.flatMap((p) => solidToShells(p.layers));
+  const jBad = jShells.filter((s) => !isWatertight(s) || shellVolume(s) <= 0).length;
+  check(jBad === 0, `jigsaw+surfaces: ${jShells.length} shells watertight (${mj.pieces.length} pieces)`);
+}
+
 console.log('name puzzle: font -> letters-as-pieces');
 {
   const { parseFont, textToInput } = await import('../src/text.js');
@@ -306,7 +364,7 @@ console.log('name puzzle: font -> letters-as-pieces');
   const { readFileSync } = await import('node:fs');
   const buf = readFileSync(new URL('../assets/default-font.ttf', import.meta.url));
   const font = parseFont(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
-  const nameNorm = normalizeInput(textToInput(font, 'Emma', 8), 180);
+  const nameNorm = normalizeInput(textToInput(font, 'Emma', 8), 180, { holesFromWinding: true });
 
   const m = buildPuzzle(nameNorm, { cutMode: 'letters', surfaceMode: 'none', pieceHeight: 8, borderHeight: 5 });
   check(m.pieces.length === 4, `"Emma" -> ${m.pieces.length} letter pieces (expected 4)`);
